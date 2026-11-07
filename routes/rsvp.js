@@ -1,8 +1,12 @@
+
 const express = require("express");
 const router = express.Router();
 const RSVP = require("../models/RSVP");
 
+// =================================
 // SAVE RSVP
+// =================================
+
 router.post("/", async (req, res) => {
   try {
     const {
@@ -13,7 +17,7 @@ router.post("/", async (req, res) => {
       guestMessage,
     } = req.body;
 
-    // Validation
+    // Name validation
     if (!guestName || !guestName.trim()) {
       return res.status(400).json({
         success: false,
@@ -21,19 +25,34 @@ router.post("/", async (req, res) => {
       });
     }
 
-    if (!guestCount || Number(guestCount) < 1 || Number(guestCount) > 20) {
+    if (guestName.trim().length > 15) {
+      return res.status(400).json({
+        success: false,
+        message: "Name cannot exceed 15 characters",
+      });
+    }
+
+    // Phone validation
+    const cleanNumber = String(guestNumber || "").trim();
+
+    if (!/^03[0-9]{9}$/.test(cleanNumber)) {
+      return res.status(400).json({
+        success: false,
+        message: "Please enter a valid 11-digit mobile number (03XXXXXXXXX)",
+      });
+    }
+
+    // Guest count validation
+    const count = Number(guestCount);
+
+    if (!Number.isInteger(count) || count < 1 || count > 20) {
       return res.status(400).json({
         success: false,
         message: "Please select valid number of guests",
       });
     }
-     if (!guestNumber || Number(guestNumber) === 11 ) {
-      return res.status(400).json({
-        success: false,
-        message: "Please Provide Correct Cell Number",
-      });
-    }
 
+    // Attendance validation
     if (
       !["Yes, I will attend", "Sorry, I cannot attend"].includes(attendance)
     ) {
@@ -43,11 +62,19 @@ router.post("/", async (req, res) => {
       });
     }
 
-    // Create RSVP
+    // Message validation
+    if (guestMessage && guestMessage.trim().length > 100) {
+      return res.status(400).json({
+        success: false,
+        message: "Message cannot exceed 100 characters",
+      });
+    }
+
+    // Save RSVP
     const newRSVP = await RSVP.create({
       name: guestName.trim(),
-      guestCount: Number(guestCount),
-      guestNumber: guestNumber,
+      guestNumber: cleanNumber,
+      guestCount: count,
       attendance,
       message: guestMessage ? guestMessage.trim() : "",
     });
@@ -68,16 +95,25 @@ router.post("/", async (req, res) => {
   }
 });
 
+
+// =================================
 // ADMIN: ALL RSVP RECORDS
+// =================================
+
 router.get("/admin", async (req, res) => {
   try {
     const records = await RSVP.find()
-      .select("name guestCount -_id")
-      .sort({ createdAt: -1 });
+      .select("name guestNumber guestCount attendance message createdAt")
+      .sort({ createdAt: -1 })
+      .lean();
 
     return res.status(200).json({
       success: true,
       totalEntries: records.length,
+      totalGuests: records.reduce(
+        (total, record) => total + record.guestCount,
+        0
+      ),
       records,
     });
 
@@ -92,20 +128,34 @@ router.get("/admin", async (req, res) => {
 });
 
 
-// ADMIN: DUPLICATE ENTRIES
+// =================================
+// ADMIN: DUPLICATE PHONE NUMBERS
+// =================================
+
 router.get("/duplicates", async (req, res) => {
   try {
     const duplicates = await RSVP.aggregate([
       {
+        $match: {
+          guestNumber: { $exists: true, $ne: "" }
+        }
+      },
+      {
         $group: {
-          _id: {
-            $toLower: {
-              $trim: { input: "$name" }
-            }
-          },
-          name: { $first: "$name" },
+          _id: "$guestNumber",
           totalEntries: { $sum: 1 },
-          totalGuests: { $sum: "$guestCount" }
+          totalGuests: { $sum: "$guestCount" },
+          names: { $addToSet: "$name" },
+          records: {
+            $push: {
+              name: "$name",
+              guestNumber: "$guestNumber",
+              guestCount: "$guestCount",
+              attendance: "$attendance",
+              message: "$message",
+              createdAt: "$createdAt"
+            }
+          }
         }
       },
       {
@@ -116,19 +166,23 @@ router.get("/duplicates", async (req, res) => {
       {
         $project: {
           _id: 0,
-          name: 1,
+          guestNumber: "$_id",
           totalEntries: 1,
-          totalGuests: 1
+          totalGuests: 1,
+          names: 1,
+          records: 1
         }
       },
       {
-        $sort: { totalEntries: -1 }
+        $sort: {
+          totalEntries: -1
+        }
       }
     ]);
 
     return res.status(200).json({
       success: true,
-      duplicateNames: duplicates.length,
+      duplicateNumbers: duplicates.length,
       duplicates
     });
 
@@ -137,7 +191,7 @@ router.get("/duplicates", async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: "Unable to check duplicate entries"
+      message: "Unable to check duplicate numbers"
     });
   }
 });
