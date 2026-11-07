@@ -7,6 +7,7 @@ router.post("/", async (req, res) => {
   try {
     const {
       guestName,
+      guestNumber,
       guestCount,
       attendance,
       guestMessage,
@@ -20,10 +21,16 @@ router.post("/", async (req, res) => {
       });
     }
 
-    if (!guestCount || Number(guestCount) < 1 || Number(guestCount) > 5) {
+    if (!guestCount || Number(guestCount) < 1 || Number(guestCount) > 20) {
       return res.status(400).json({
         success: false,
         message: "Please select valid number of guests",
+      });
+    }
+     if (!guestNumber || Number(guestNumber) === 11 ) {
+      return res.status(400).json({
+        success: false,
+        message: "Please Provide Correct Cell Number",
       });
     }
 
@@ -40,6 +47,7 @@ router.post("/", async (req, res) => {
     const newRSVP = await RSVP.create({
       name: guestName.trim(),
       guestCount: Number(guestCount),
+      guestNumber: guestNumber,
       attendance,
       message: guestMessage ? guestMessage.trim() : "",
     });

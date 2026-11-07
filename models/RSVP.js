@@ -9,11 +9,16 @@ const rsvpSchema = new mongoose.Schema(
       maxlength: 100,
     },
 
+    guestNumber: {
+      type: Number,
+      required: true,
+    },
+
     guestCount: {
       type: Number,
       required: true,
       min: 1,
-      max: 5,
+      max: 20,
     },
 
     attendance: {
